@@ -2,6 +2,7 @@ from atproto import Client, FirehoseSubscribeReposClient, parse_subscribe_repos_
 import password
 import os
 import requests
+import json
 
 def handle_repo_message(message) -> None:
     """Handles and decodes repository messages from the Firehose."""
@@ -24,19 +25,34 @@ def handle_repo_message(message) -> None:
         if op.action == "create" and op.path.startswith("app.bsky.feed.post"):
             print(f"Received new post from repo: {commit.repo}")
             # Print the details for the created post
-            print(f" - Action: {op.action}, Path: {op.path}")
-            if op.cid:
-                print(f"   - CID: {op.cid}")
+            #print(f" - Action: {op.action}, Path: {op.path}")
+            #if op.cid:
+                #print(f"   - CID: {op.cid}")
                 
             # Optionally, retrieve and print the post content from the CAR blocks
             record_raw_data = car.blocks.get(op.cid)
             if record_raw_data:
                 record = models.get_or_create(record_raw_data, strict=False)
                 print(f"   - Post content: {record.text}")
+                try:
+                    print(f"   - Image data: {record.embed.images}")
+                    for img in record.embed.images:
+                        print(img.image.ref)
+                
+                except AttributeError:
+                    print("No images")
+
+                # Convert the parsed message to a JSON string for inspection
+                message_json = json.dumps(record, default=str, indent=4)
+    
+                # Print the full structure of the message for debugging purposes
+                #print("Full JSON structure of the message:")
+                #print(message_json)
+
 
             print("\n---\n")  # Separate multiple posts for clarity
-        #else:
-            #print(f"Skipped non-post event: {op.path}")
+        else:
+            print(f"Skipped non-post event: {op.path}")
         
 
 def main():
