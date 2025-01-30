@@ -3,6 +3,17 @@ import password
 import os
 import requests
 import json
+import multiformats_cid
+
+
+def print_op_info(op):
+    print(op)
+
+    # Print the details for the created post
+    print(f" - Action: {op.action}, Path: {op.path}")
+    if op.cid:
+        print(f"   - CID: {op.cid}")
+    return op
 
 def handle_repo_message(message) -> None:
     """Handles and decodes repository messages from the Firehose."""
@@ -23,24 +34,29 @@ def handle_repo_message(message) -> None:
     # Check for post-related events and ignore others
     for op in commit.ops:
         if op.action == "create" and op.path.startswith("app.bsky.feed.post"):
-            print(f"Received new post from repo: {commit.repo}")
-            # Print the details for the created post
-            #print(f" - Action: {op.action}, Path: {op.path}")
-            #if op.cid:
-                #print(f"   - CID: {op.cid}")
                 
             # Optionally, retrieve and print the post content from the CAR blocks
             record_raw_data = car.blocks.get(op.cid)
             if record_raw_data:
                 record = models.get_or_create(record_raw_data, strict=False)
-                print(f"   - Post content: {record.text}")
+                #print(f"   - Post content: {record.text}")
                 try:
                     print(f"   - Image data: {record.embed.images}")
                     for img in record.embed.images:
-                        print(img.image.ref)
+                        imgref = img.image.ref
+                        print(imgref)
+                        imgref = multiformats_cid.from_bytes(imgref)
+                        print(imgref)
+                        img = car.blocks.get(imgref)
+                        print(img)
                 
+                    print(f"   - Post content: {record.text}")
+                    print("\n")
+                    print_op_info(op)
+                    print("\n\n\n")
                 except AttributeError:
-                    print("No images")
+                    pass
+                    #print("No images")
 
                 # Convert the parsed message to a JSON string for inspection
                 message_json = json.dumps(record, default=str, indent=4)
@@ -50,9 +66,9 @@ def handle_repo_message(message) -> None:
                 #print(message_json)
 
 
-            print("\n---\n")  # Separate multiple posts for clarity
-        else:
-            print(f"Skipped non-post event: {op.path}")
+            #print("\n---\n")  # Separate multiple posts for clarity
+        #else:
+            #print(f"Skipped non-post event: {op.path}")
         
 
 def main():
