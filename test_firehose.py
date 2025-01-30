@@ -13,7 +13,13 @@ def print_op_info(op):
     print(f" - Action: {op.action}, Path: {op.path}")
     if op.cid:
         print(f"   - CID: {op.cid}")
-    return op
+    print("XDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
+    print(op)
+    print("XDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD2")
+    if op.uri:
+        print(f"   - URI: {op.uri}")
+    print("----------------------------")
+    return
 
 def handle_repo_message(message) -> None:
     """Handles and decodes repository messages from the Firehose."""
@@ -51,8 +57,8 @@ def handle_repo_message(message) -> None:
                         print(img)
                 
                     print(f"   - Post content: {record.text}")
-                    print("\n")
-                    print_op_info(op)
+                    #print("\n")
+                    #print_op_info(op)
                     print("\n\n\n")
                 except AttributeError:
                     pass
