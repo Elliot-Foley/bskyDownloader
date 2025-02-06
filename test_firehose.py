@@ -1,9 +1,14 @@
 from atproto import Client, FirehoseSubscribeReposClient, parse_subscribe_repos_message, CAR, models
-import password
+#import password
 import os
 import requests
 import json
 import multiformats_cid
+import datetime
+import concurrent.futures
+import requests
+now = datetime.datetime.now()
+Images = []
 
 
 def print_op_info(op):
@@ -11,18 +16,38 @@ def print_op_info(op):
 
     # Print the details for the created post
     print(f" - Action: {op.action}, Path: {op.path}")
-    if op.cid:
-        print(f"   - CID: {op.cid}")
-    print("XDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
-    print(op)
-    print("XDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD2")
-    if op.uri:
-        print(f"   - URI: {op.uri}")
-    print("----------------------------")
+    #if op.cid:
+    #print(f"   - CID: {op.cid}")
+    #print("XDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
+    #print(op)
+    #print("XDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD2")
+    #if op.uri:
+    #    print(f"   - URI: {op.uri}")
+    #print("----------------------------")
     return
+
+
+def download_image(url, filename):
+    response = requests.get(url, stream=True)
+    if response.status_code == 200:
+        with open(filename, 'wb') as f:
+            for chunk in response.iter_content(1024):
+                f.write(chunk)
+        print(f"Downloaded {filename}")
+    else:
+        print(f"Failed to download {url}")
+
+class Image:
+    def __init__(self, did, cid, text):
+        self.did = did
+        self.cid = cid
+        self.text = text
+        self.url = f"https://cdn.bsky.app/img/feed_fullsize/plain/{did}/{cid}@jpeg"
+        self.filename = f"testoutput/{now} {did}-{cid}"
 
 def handle_repo_message(message) -> None:
     """Handles and decodes repository messages from the Firehose."""
+    global now, Images
     commit = parse_subscribe_repos_message(message)
 
     # Ensure it's a commit message with blocks
@@ -47,19 +72,32 @@ def handle_repo_message(message) -> None:
                 record = models.get_or_create(record_raw_data, strict=False)
                 #print(f"   - Post content: {record.text}")
                 try:
-                    print(f"   - Image data: {record.embed.images}")
+                    #print(f"   - Image data: {record.embed.images}")
                     for img in record.embed.images:
+                        did = commit.repo
+                        #print(did)
                         imgref = img.image.ref
-                        print(imgref)
                         imgref = multiformats_cid.from_bytes(imgref)
-                        print(imgref)
-                        img = car.blocks.get(imgref)
-                        print(img)
+                        #print(imgref)
+                        #print(img)
                 
-                    print(f"   - Post content: {record.text}")
-                    #print("\n")
-                    #print_op_info(op)
-                    print("\n\n\n")
+                        #print(f"   - Post content: {record.text}")
+                        imgURL = f"https://cdn.bsky.app/img/feed_fullsize/plain/{did}/{imgref}@jpeg"
+                        #print(f"   - URL: {imgURL}")
+                        Images.append(Image(did, imgref, record.text))
+                        if datetime.datetime.now() - now >= datetime.timedelta(seconds=1):
+                            print("\n\n\n")
+                            now = datetime.datetime.now()
+                            img_count = 0
+                            for i in Images:
+                                img_count += 1
+                                print(f"Saving image from {i.url} at {i.filename}")
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                                futures = [executor.submit(download_image, i.url, i.filename) for i in Images]
+                                concurrent.futures.wait(futures)
+                            print(f"1 second passed, {img_count} images processed")
+                            Images = []
+                   
                 except AttributeError:
                     pass
                     #print("No images")
