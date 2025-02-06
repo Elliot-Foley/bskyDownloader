@@ -2,3 +2,5 @@ password.py
 venv/
 __pycache__/
 testoutput/*
+output/*
+.*.swp

@@ -9,33 +9,42 @@ import concurrent.futures
 import requests
 now = datetime.datetime.now()
 Images = []
+output_path_base = "./output"
 
+def download_image(image):
+    # Create directory for this image
+    image_dir = os.path.join(output_path_base, f"{image.filename}")
+    os.makedirs(image_dir, exist_ok=True)
 
-def print_op_info(op):
-    print(op)
+    # File paths
+    image_path = os.path.join(image_dir, f"{image.filename}.jpeg")
+    text_path = os.path.join(image_dir, "description.txt")
 
-    # Print the details for the created post
-    print(f" - Action: {op.action}, Path: {op.path}")
-    #if op.cid:
-    #print(f"   - CID: {op.cid}")
-    #print("XDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
-    #print(op)
-    #print("XDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD2")
-    #if op.uri:
-    #    print(f"   - URI: {op.uri}")
-    #print("----------------------------")
-    return
+    # Download the image
+    response = requests.get(image.url, stream=True)
+    if response.status_code == 200:
+        with open(image_path, 'wb') as f:
+            for chunk in response.iter_content(1024):
+                f.write(chunk)
+        print(f"Downloaded {image_path}")
 
+        # Save text description
+        with open(text_path, 'w', encoding="utf-8") as f:
+            f.write(image.text)
+        print(f"Saved text description: {text_path}")
+    else:
+        print(f"Failed to download {image.url}")
 
-def download_image(url, filename):
+def download_image_old(image):
     response = requests.get(url, stream=True)
     if response.status_code == 200:
         with open(filename, 'wb') as f:
             for chunk in response.iter_content(1024):
                 f.write(chunk)
-        print(f"Downloaded {filename}")
+        #print(f"Downloaded {image.filename}")
+        os.makedirs()
     else:
-        print(f"Failed to download {url}")
+        print(f"Failed to download {image.url}")
 
 class Image:
     def __init__(self, did, cid, text):
@@ -43,7 +52,7 @@ class Image:
         self.cid = cid
         self.text = text
         self.url = f"https://cdn.bsky.app/img/feed_fullsize/plain/{did}/{cid}@jpeg"
-        self.filename = f"testoutput/{now} {did}-{cid}"
+        self.filename = f"{now} {did}-{cid}"
 
 def handle_repo_message(message) -> None:
     """Handles and decodes repository messages from the Firehose."""
@@ -93,7 +102,7 @@ def handle_repo_message(message) -> None:
                                 img_count += 1
                                 print(f"Saving image from {i.url} at {i.filename}")
                             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                                futures = [executor.submit(download_image, i.url, i.filename) for i in Images]
+                                futures = [executor.submit(download_image, i) for i in Images]
                                 concurrent.futures.wait(futures)
                             print(f"1 second passed, {img_count} images processed")
                             Images = []
