@@ -4,3 +4,7 @@ __pycache__/
 testoutput/*
 output/*
 .*.swp
+firehose_errors.log
+nohup.out
+standard_log.txt
+

@@ -1,4 +1,5 @@
 from atproto import Client, FirehoseSubscribeReposClient, parse_subscribe_repos_message, CAR, models
+from atproto_firehose.exceptions import FirehoseError
 #import password
 import os
 import requests
@@ -7,9 +8,27 @@ import multiformats_cid
 import datetime
 import concurrent.futures
 import requests
+import time
+import logging
+import sys
+
+sys.stdout.flush()
+sys.stderr.flush()
+
 now = datetime.datetime.now()
 Images = []
-output_path_base = "./output"
+output_path_base = "/data/output"
+noisy = False
+
+# Configure logging
+log_file = "firehose_errors.log"
+logging.basicConfig(
+    filename=log_file,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+
+last_image_upload_time = None
 
 def download_image(image):
     # Create directory for this image
@@ -26,12 +45,14 @@ def download_image(image):
         with open(image_path, 'wb') as f:
             for chunk in response.iter_content(1024):
                 f.write(chunk)
-        print(f"Downloaded {image_path}")
+        if noisy:
+            print(f"Downloaded {image_path}")
 
         # Save text description
         with open(text_path, 'w', encoding="utf-8") as f:
             f.write(image.text)
-        print(f"Saved text description: {text_path}")
+        if noisy:
+            print(f"Saved text description: {text_path}")
     else:
         print(f"Failed to download {image.url}")
 
@@ -56,6 +77,7 @@ class Image:
 
 def handle_repo_message(message) -> None:
     """Handles and decodes repository messages from the Firehose."""
+    #print("tmp: handling message") This runs fast
     global now, Images
     commit = parse_subscribe_repos_message(message)
 
@@ -82,6 +104,8 @@ def handle_repo_message(message) -> None:
                 #print(f"   - Post content: {record.text}")
                 try:
                     #print(f"   - Image data: {record.embed.images}")
+                    if not record.embed.images:
+                        continue
                     for img in record.embed.images:
                         did = commit.repo
                         #print(did)
@@ -91,17 +115,26 @@ def handle_repo_message(message) -> None:
                         #print(img)
                 
                         #print(f"   - Post content: {record.text}")
-                        imgURL = f"https://cdn.bsky.app/img/feed_fullsize/plain/{did}/{imgref}@jpeg"
+                        #print(f"   - Uploaded at: {record.created_at}")
+                        global last_image_upload_time
+                        last_image_upload_time = record.created_at
+
+                        #Old version, maybe rate limited?
+                        #imgURL = f"https://cdn.bsky.app/img/feed_fullsize/plain/{did}/{imgref}@jpeg"
+
+                        imgURL = f"https://bsky.social/xrpc/com.atproto.sync.getBlob?did={did}&cid={imgref}"
                         #print(f"   - URL: {imgURL}")
                         Images.append(Image(did, imgref, record.text))
                         if datetime.datetime.now() - now >= datetime.timedelta(seconds=1):
-                            print("\n\n\n")
+                            if noisy:
+                                print("\n\n\n")
                             now = datetime.datetime.now()
                             img_count = 0
                             for i in Images:
                                 img_count += 1
-                                print(f"Saving image from {i.url} at {i.filename}")
-                            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                                if noisy:
+                                    print(f"Saving image from {i.url} at {i.filename}")
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                                 futures = [executor.submit(download_image, i) for i in Images]
                                 concurrent.futures.wait(futures)
                             print(f"1 second passed, {img_count} images processed")
@@ -125,14 +158,34 @@ def handle_repo_message(message) -> None:
         
 
 def main():
-    # Log in using the AT Protocol client
     client = Client()
-    # profile = client.login('foleelli@oregonstate.edu', password.password)
-    # print('Welcome,', profile.display_name)
-
-    # Set up Firehose client and start processing messages
     firehose_client = FirehoseSubscribeReposClient()
-    firehose_client.start(handle_repo_message)
+    print("Client initialized, begining processing")
+    while True:
+        try:
+            firehose_client.start(handle_repo_message)
+        except FirehoseError as e:
+            error_obj = e.args[0]  # Extract the XrpcError object
+            error_type = getattr(error_obj, "error", "UnknownError")  # Get error safely
+
+            # Calculate time difference if last_image_upload_time is set
+            if last_image_upload_time:
+                last_seen_time = datetime.datetime.strptime(last_image_upload_time, "%Y-%m-%dT%H:%M:%S.%fZ")
+                current_utc_time = datetime.datetime.utcnow()
+                time_diff = current_utc_time - last_seen_time
+                time_lag = f"Data lag: {time_diff}"
+            else:
+                time_lag = "Data lag: Unknown (No prior uploads recorded)"
+
+            msg = f"FirehoseError: {error_type}. {time_lag}. Restarting..."
+            print(msg)
+            logging.warning(msg)
+            time.sleep(2)  # Wait before retrying
+        except Exception as e:
+            msg = f"Unexpected error: {e}"
+            print(msg)
+            logging.error(msg)
+            #break  # Stop for unknown errors
 
 if __name__ == '__main__':
     main()
