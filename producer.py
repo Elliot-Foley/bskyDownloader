@@ -67,10 +67,12 @@ def handle_repo_message(message) -> None:
                     payload = {
                         "url": img_url,
                         "text": record.text,
-                        "timestamp": record.created_at
+                        "timestamp": record.created_at,
+                        "cid": f"{imgref}",
+                        "did": f"{did}"
                     }
 
-                    r.publish('image_channel', json.dumps(payload))
+                    r.rpush('image_queue', json.dumps(payload))
                     global image_processed_num
                     image_processed_num += 1
                     if image_processed_num % 100 == 99:
