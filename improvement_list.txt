@@ -1,0 +1,32 @@
+Can we efficiently store and compare ORB at scale?
+    Key problem was that ORB gives a list of separate feature vectors, which openCV compares with "BFmatcher," literally "brute force matcher," because it tries all the permutations of features against each other to find the best match. This process is unfortunately non-linear, and idk how we would do efficient approximate nearest neighbor in this paradigm.
+
+What is the actual false-negative rate of ORB methods and block-hashing methods?
+    We did approximations based on cross-comparison of them at small scales, but this might not translate well to larger datasets.
+
+Are we actually capturing all (or at least 99.5%+) the traffic coming from Bluesky?
+    We appear to be matching the rate at which the firehose provides new image posts, but with image errors, download errors, unknown errors, etc, what are our actual coverage rates?
+
+How can we do good-quality OCR at scale?
+    For the types of images we get, we analyzed performances of various OCR models to try to extract text from images with text in them. The only model that did remotely well was Surya, but it was orders of magnitude too slow for the ingestion rate, so we scrapped it. Currently, we have no way of reading text from images.
+
+Should we transition to a dedicated vector database?
+    I did some initial testing with Spotify's ANNOY and Facebook's FAISS. FAISS worked moderately well, but I was unable to store non-vector database in it, which was a major limitation. However, we have read that Postgres might not be the best database solution. How bad is Postgres compared to other options at the scale we operate in?
+
+How about official reposts?
+    Currently, we only collect *posts* which contain images, and are often analysing duplicates which we call "reposts." However, there is a widely-used feature called a "repost," which we do not collect data for, since it doesn't really fit into our collection model. We probably should be collecting these, but haven't been. How should we go about storing these? Do we re-download the image? Reposts refer to an original post, so how should we store that relation?
+
+How do we cluster reposts beyond Phash=0?
+    Currently, a duplicate post is only something which has the exact same phash value. We could set this threshold to be slightly different - what if the difference in phashes was less than 2; that's probably also a duplicate. We have plenty of evidence that there exist many near-dupes which are in this phash-vicinity. However, to query them, how are we supposed to handle transitivity? What is the "center of a cluster," and how do we grab that from just SQL (in a compuationally efficient manner)? Also, what if our definition of "close" relies not just on phash, but also other metrics like ahash and dhash? We can't just run an ML model on every pair in our dataset...
+
+Our phash is, well, suspicious...
+    For our database inserter, we use Python's "imagehash" library. This is by far the most popular image hashing library, and it has been used without even being cited in multiple related papers. However, there is a fairly significant bug that we've noticed, as has the developer: all phash distances are even (https://github.com/JohannesBuchner/imagehash/issues/211#issuecomment-2302736642). This means that the phash algorithm is essentially wasting half of the representation space, which, while maybe isn't a huge storage issue for us right now, is at least conceptually pretty offensive. Go's most popular image hashing library does not have this issue (and produces incompatible results with Python's imagehash). After looking into it, there is no official "phash algorithm"; it describes general transformations, which when applied produce the desired behavior. Could we actually empirically determine a "best" phash algorithm and use that, instead of various buggy implementations?
+
+Async instead of multithreading
+    Our consumer is broken into 8 parallel processes currently, each of which is halting when downloading an image. Could we refactor this into a single async consumer that downloaded multiple files at once by itself? Occasionally we receive extrememly large bumps in traffic that get stuck in Redis for a while, feeding us inaccurate timestamps. Async might help with this, but it might run into the consequence of triggering the IP-based rate limit. What are the relative risks of each of these? Should we upgrade?
+
+Collect better metadata
+    Currently, the firehose provides a whole bunch of metadata that we just throw away, such as the actual timestamp of when a post is posted. Could we send that through the Redis pipeline and store it with the images? If we have extra queries within the rate limit, we could even grab info about the posters' profiles.
+
+Dedicated image server
+    Currently, we store all the images locally. We will run out of space soonish. Images are deleted from Bsky for a variety of reasons, and we would like to have backups for data purposes (maybe? revenge porn, cp are bad cases here). Could we set up some kind of cold server with great writing speeds and storage, and then only read images extremely occasionally from it? Instead of sharding by time, we would shard by SHA256 hash, that way we don't need to store exact dupes of images anymore, and then we would only keep the image metadata and SHA hash locally, saving a massive amount of space.
